@@ -343,6 +343,8 @@ extern ssize_t forward_to_forwarders(coap_pkt_t *client_pkt,
                                      sock_udp_ep_t *origin_server_ep,
                                      gcoap_resp_handler_t resp_handler);
 
+extern int get_proxy_nexthop(char *dest, char *address);
+
 static int _gcoap_forward_proxy_via_coap(coap_pkt_t *client_pkt,
                                          client_ep_t *client_ep,
                                          uri_parser_result_t *urip)
@@ -356,17 +358,31 @@ static int _gcoap_forward_proxy_via_coap(coap_pkt_t *client_pkt,
         return -EINVAL;
     }
 
-    if ((len = forward_to_forwarders(client_pkt, client_ep, &origin_server_ep, _forward_resp_handler)) > 0) {
-        return len;
-    }
-
     /* do not forward requests if they already exist, e.g., due to CON
        and retransmissions. In the future, the proxy should set an
        empty ACK message to stop the retransmissions of a client */
-    gcoap_forward_proxy_find_req_memo(&memo, client_pkt, &origin_server_ep);
+    char nexthop_str[IPV6_ADDR_MAX_STR_LEN];
+    char dest_str[IPV6_ADDR_MAX_STR_LEN];
+    ipv6_addr_t tmp_addr;
+    memcpy(tmp_addr.u16, origin_server_ep.addr.ipv6, sizeof(origin_server_ep.addr.ipv6));
+    ipv6_addr_to_str(dest_str, &tmp_addr, sizeof(dest_str));
+    int lastforwarder = get_proxy_nexthop(dest_str, nexthop_str);
+    if (lastforwarder) {
+        gcoap_forward_proxy_find_req_memo(&memo, client_pkt, &origin_server_ep);
+    }
+    else {
+        sock_udp_ep_t tmp_ep = { .family = AF_INET6, .port = COAP_PORT };
+        ipv6_addr_from_str(&tmp_addr, nexthop_str);
+        memcpy(&tmp_ep.addr.ipv6[0], &tmp_addr.u8[0], sizeof(tmp_addr.u8));
+        gcoap_forward_proxy_find_req_memo(&memo, client_pkt, &tmp_ep);
+    }
     if (memo) {
-        DEBUG("gcoap_forward_proxy: request already exists, ignore!\n");
+        printf("gcoap_forward_proxy: request already exists, ignore!\n");
+        _free_client_ep(client_ep);
         return 0;
+    }
+    if ((len = forward_to_forwarders(client_pkt, client_ep, &origin_server_ep, _forward_resp_handler)) > 0) {
+        return len;
     }
 
     unsigned token_len = coap_get_token_len(client_pkt);
@@ -426,6 +442,7 @@ int gcoap_forward_proxy_request_process(coap_pkt_t *pkt,
 
     if (optlen < 0) {
         /* -ENOENT, -EINVAL */
+        _free_client_ep(cep);
         return optlen;
     }
 
@@ -433,6 +450,7 @@ int gcoap_forward_proxy_request_process(coap_pkt_t *pkt,
 
     /* cannot parse Proxy-URI option, or URI is relative */
     if (ures || (!uri_parser_is_absolute((const char *) uri, optlen))) {
+        _free_client_ep(cep);
         return -EINVAL;
     }
 
@@ -440,11 +458,13 @@ int gcoap_forward_proxy_request_process(coap_pkt_t *pkt,
     if (!strncmp("coap", urip.scheme, urip.scheme_len)) {
         int res = _gcoap_forward_proxy_via_coap(pkt, cep, &urip);
         if (res < 0) {
+            _free_client_ep(cep);
             return -EINVAL;
         }
     }
     /* no other scheme supported for now */
     else {
+        _free_client_ep(cep);
         return -EPERM;
     }
 
