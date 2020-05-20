@@ -382,7 +382,7 @@ static int _gcoap_forward_proxy_via_coap(coap_pkt_t *client_pkt,
         gcoap_forward_proxy_find_req_memo(&memo, client_pkt, &tmp_ep);
     }
     if (memo) {
-        printf("gcoap_forward_proxy: request already exists, ignore!\n");
+        DEBUG("gcoap_forward_proxy: request already exists, ignore!\n");
         _free_client_ep(client_ep);
         return 0;
     }
