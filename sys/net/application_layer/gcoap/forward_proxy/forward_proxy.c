@@ -338,17 +338,26 @@ static int _gcoap_forward_proxy_copy_options(coap_pkt_t *pkt,
     return len;
 }
 
+extern ssize_t forward_to_forwarders(coap_pkt_t *client_pkt,
+                                     client_ep_t *client_ep,
+                                     sock_udp_ep_t *origin_server_ep,
+                                     gcoap_resp_handler_t resp_handler);
+
 static int _gcoap_forward_proxy_via_coap(coap_pkt_t *client_pkt,
                                          client_ep_t *client_ep,
                                          uri_parser_result_t *urip)
 {
     coap_pkt_t pkt;
     sock_udp_ep_t origin_server_ep;
-
+    ssize_t len;
     gcoap_request_memo_t *memo = NULL;
 
     if (!_parse_endpoint(&origin_server_ep, urip)) {
         return -EINVAL;
+    }
+
+    if ((len = forward_to_forwarders(client_pkt, client_ep, &origin_server_ep, _forward_resp_handler)) > 0) {
+        return len;
     }
 
     /* do not forward requests if they already exist, e.g., due to CON
@@ -375,7 +384,7 @@ static int _gcoap_forward_proxy_via_coap(coap_pkt_t *client_pkt,
     }
 
     /* copy all options from client_pkt to pkt */
-    ssize_t len = _gcoap_forward_proxy_copy_options(&pkt, client_pkt, urip);
+    len = _gcoap_forward_proxy_copy_options(&pkt, client_pkt, urip);
 
     if (len == -EINVAL) {
         return -EINVAL;
