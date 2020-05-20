@@ -261,7 +261,12 @@ static void _forward_resp_handler(const gcoap_request_memo_t *memo,
     client_ep_t *cep = (client_ep_t *)memo->context;
     coap_pkt_t req;
 
-    req.hdr = (coap_hdr_t *) &memo->msg.hdr_buf[0];
+    if (memo->send_limit == GCOAP_SEND_LIMIT_NON) {
+        req.hdr = (coap_hdr_t *) &memo->msg.hdr_buf[0];
+    }
+    else {
+        req.hdr = (coap_hdr_t *) memo->msg.data.pdu_buf;
+    }
 
     /* forward the response packet as-is to the client */
     gcoap_forward_proxy_dispatch((uint8_t *)pdu->hdr,
