@@ -89,6 +89,7 @@ void nanocoap_cache_key_generate(const coap_pkt_t *req, uint8_t *cache_key)
     coap_optpos_t opt = {0, 0};
     uint8_t *value;
 
+    sha256_update(&ctx, &req->hdr->id, sizeof(req->hdr->id));
     sha256_update(&ctx, req->token, coap_get_token_len(req));
     for (int i = 0; i < req->options_len; i++) {
         ssize_t optlen = coap_opt_get_next(req, &opt, &value, !i);
