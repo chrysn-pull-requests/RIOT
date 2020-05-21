@@ -260,14 +260,6 @@ static void _forward_resp_handler(const gcoap_request_memo_t *memo,
 {
     (void) remote; /* this is the origin server */
     client_ep_t *cep = (client_ep_t *)memo->context;
-    coap_pkt_t req;
-
-    if (memo->send_limit == GCOAP_SEND_LIMIT_NON) {
-        req.hdr = (coap_hdr_t *) &memo->msg.hdr_buf[0];
-    }
-    else {
-        req.hdr = (coap_hdr_t *) memo->msg.data.pdu_buf;
-    }
 
     /* forward the response packet as-is to the client */
     gcoap_forward_proxy_dispatch((uint8_t *)pdu->hdr,
@@ -276,6 +268,14 @@ static void _forward_resp_handler(const gcoap_request_memo_t *memo,
                                  &cep->ep);
 
 #if IS_ACTIVE(MODULE_NANOCOAP_CACHE)
+    coap_pkt_t req;
+    if (memo->send_limit == GCOAP_SEND_LIMIT_NON) {
+        req.hdr = (coap_hdr_t *) &memo->msg.hdr_buf[0];
+    }
+    else {
+        req.hdr = (coap_hdr_t *) memo->msg.data.pdu_buf;
+    }
+
     size_t pdu_len = pdu->payload_len +
         (pdu->payload - (uint8_t *)pdu->hdr);
     nanocoap_cache_process(cep->cache_key, coap_get_code(&req), pdu, pdu_len);
