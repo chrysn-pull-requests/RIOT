@@ -254,7 +254,7 @@ static void _on_resp_timeout(void *arg) {
 #endif
 //        uint32_t timeout  = ((uint32_t)CONFIG_COAP_ACK_TIMEOUT << i) * US_PER_SEC;
         (void) i;
-        uint32_t timeout  = ((CONFIG_COAP_ACK_TIMEOUT * US_PER_SEC) - 250) + random_uint32_range(0, 500);
+        uint32_t timeout  = ((CONFIG_COAP_ACK_TIMEOUT * US_PER_SEC) - 100*1000) + random_uint32_range(0, 200*1000);
 #if CONFIG_COAP_RANDOM_FACTOR_1000 > 1000
         uint32_t end = ((uint32_t)TIMEOUT_RANGE_END << i) * US_PER_SEC;
         timeout = random_uint32_range(timeout, end);
