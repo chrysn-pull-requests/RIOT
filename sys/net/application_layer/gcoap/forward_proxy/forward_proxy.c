@@ -462,6 +462,12 @@ int gcoap_forward_proxy_request_process(coap_pkt_t *pkt,
 
     /* target is using CoAP */
     if (!strncmp("coap", urip.scheme, urip.scheme_len)) {
+        if (urip.port == 0) {
+            /* Not using some STRINGIFY(COAP_PORT) because COAP_PORT is defined
+             * with parentheses */
+            urip.port = "5683";
+            urip.port_len = 4;
+        }
         int res = _gcoap_forward_proxy_via_coap(pkt, cep, &urip);
         if (res < 0) {
             _free_client_ep(cep);
