@@ -61,6 +61,9 @@ ifneq (,$(filter gnrc_mac,$(USEMODULE)))
   USEMODULE += gnrc_priority_pktqueue
   USEMODULE += csma_sender
   USEMODULE += evtimer
+  ifneq (,$(filter gnrc_netif,$(USEMODULE)))
+    USEMODULE += gnrc_netif_mac
+  endif
 endif
 
 ifneq (,$(filter gnrc_gomach,$(USEMODULE)))
@@ -193,6 +196,10 @@ ifneq (,$(filter gnrc_netif,$(USEMODULE)))
   endif
 endif
 
+ifneq (,$(filter gnrc_netif_bus,$(USEMODULE)))
+  USEMODULE += core_msg_bus
+endif
+
 ifneq (,$(filter gnrc_netif_events,$(USEMODULE)))
   USEMODULE += core_thread_flags
   USEMODULE += event
@@ -274,6 +281,9 @@ ifneq (,$(filter gnrc_sixlowpan,$(USEMODULE)))
   DEFAULT_MODULE += auto_init_gnrc_sixlowpan
   USEMODULE += gnrc_nettype_sixlowpan
   USEMODULE += sixlowpan
+  ifneq (,$(filter gnrc_netif,$(USEMODULE)))
+    USEMODULE += gnrc_netif_6lo
+  endif
 endif
 
 ifneq (,$(filter gnrc_sixlowpan_ctx,$(USEMODULE)))
@@ -320,6 +330,10 @@ ifneq (,$(filter gnrc_ipv6_ext_frag,$(USEMODULE)))
   USEMODULE += xtimer
 endif
 
+ifneq (,$(filter gnrc_ipv6_ext_opt,$(USEMODULE)))
+  USEMODULE += gnrc_ipv6_ext
+endif
+
 ifneq (,$(filter gnrc_ipv6_ext_rh,$(USEMODULE)))
   USEMODULE += gnrc_ipv6_ext
 endif
@@ -349,6 +363,7 @@ ifneq (,$(filter gnrc_ipv6,$(USEMODULE)))
   USEMODULE += gnrc_ipv6_hdr
   USEMODULE += gnrc_ipv6_nib
   USEMODULE += gnrc_netif
+  USEMODULE += gnrc_netif_ipv6
   USEMODULE += gnrc_nettype_ipv6
 endif
 

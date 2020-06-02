@@ -6,6 +6,12 @@
 #
 mainmenu "RIOT Configuration"
 
+# Load macro definitions
+rsource "kconfigs/Kconfig.consts"
+
+# Load feature declarations
+rsource "kconfigs/Kconfig.features"
+
 # For now, get used modules as macros from this file (see kconfig.mk)
 osource "$(KCONFIG_GENERATED_DEPENDENCIES)"
 

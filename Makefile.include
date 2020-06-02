@@ -99,8 +99,11 @@ endif
 ifneq (,$(BOARDSDIR))
   # Only warn users, not the CI.
   ifneq ($(RIOT_CI_BUILD),1)
-    $(warning Using BOARDSDIR is deprecated use EXTERNAL_BOARD_DIRS instead)
-    $(info EXTERNAL_BOARD_DIRS can contain multiple folders separated by space)
+    # Do not warn when set from sub-make
+    ifeq ($(MAKELEVEL),0)
+      $(warning Using BOARDSDIR is deprecated use EXTERNAL_BOARD_DIRS instead)
+      $(info EXTERNAL_BOARD_DIRS can contain multiple folders separated by space)
+    endif
   endif
   EXTERNAL_BOARD_DIRS += $(BOARDSDIR)
 endif
@@ -174,12 +177,15 @@ include $(RIOTMAKE)/boards.inc.mk
 # Debug targets for build system migration
 include $(RIOTMAKE)/dependencies_debug.inc.mk
 
-GLOBAL_GOALS += buildtest buildtest-indocker info-boards-supported info-boards-features-missing info-buildsizes info-buildsizes-diff
-ifneq (, $(filter $(GLOBAL_GOALS), $(MAKECMDGOALS)))
-  BOARD=none
-endif
+GLOBAL_GOALS += buildtest \
+                buildtest-indocker \
+                info-boards-features-blacklisted \
+                info-boards-features-missing \
+                info-boards-supported \
+                info-buildsizes info-buildsizes-diff \
+                #
 
-ifeq (none,$(BOARD))
+ifneq (, $(filter $(GLOBAL_GOALS), $(MAKECMDGOALS)))
   include $(RIOTMAKE)/info-global.inc.mk
   include $(RIOTMAKE)/buildtests.inc.mk
 else
@@ -525,8 +531,13 @@ ifeq (,$(FLASHFILE))
   $(error FLASHFILE is not defined for this board: $(FLASHFILE))
 endif
 
-# By default always build ELFFILE and FLASHFILE
-BUILD_FILES += $(ELFFILE) $(FLASHFILE)
+# By default always build ELFFILE, BINFILE and FLASHFILE
+ifeq ($(RIOT_CI_BUILD),1)
+  # Don't build BINFILE on the CI to save some computation time
+  BUILD_FILES += $(ELFFILE) $(FLASHFILE)
+else
+  BUILD_FILES += $(ELFFILE) $(BINFILE) $(FLASHFILE)
+endif
 
 # variables used to compile and link c++
 CPPMIX ?= $(if $(wildcard *.cpp),1,)
@@ -940,7 +951,7 @@ ifneq ($(_BASELIBS_VALUE_BEFORE_USAGE),$(BASELIBS))
   $(error BASELIBS value changed)
 endif
 
-endif # BOARD=none
+endif
 
 # include RIOT_MAKEFILES_GLOBAL_POST configuration files
 # allows setting user specific system wide configuration parsed after the body
