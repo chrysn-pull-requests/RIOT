@@ -48,11 +48,12 @@
 static void *_event_loop(void *arg);
 static void _on_sock_evt(sock_udp_t *sock, sock_async_flags_t type, void *arg);
 static ssize_t _well_known_core_handler(coap_pkt_t* pdu, uint8_t *buf, size_t len, void *ctx);
+static void _cease_retransmission(gcoap_request_memo_t *memo);
 static size_t _handle_req(coap_pkt_t *pdu, uint8_t *buf, size_t len,
                                                          sock_udp_ep_t *remote);
 static void _expire_request(gcoap_request_memo_t *memo);
 static void _find_req_memo(gcoap_request_memo_t **memo_ptr, coap_pkt_t *pdu,
-                           const sock_udp_ep_t *remote);
+                           const sock_udp_ep_t *remote, bool by_mid);
 static int _find_resource(coap_pkt_t *pdu, const coap_resource_t **resource_ptr,
                                             gcoap_listener_t **listener_ptr);
 static int _find_observer(sock_udp_ep_t **observer, sock_udp_ep_t *remote);
@@ -168,6 +169,14 @@ static void _on_sock_evt(sock_udp_t *sock, sock_async_flags_t type, void *arg)
                 if (coap_get_type(&pdu) == COAP_TYPE_CON) {
                     messagelayer_emptyresponse_type = COAP_TYPE_RST;
                     DEBUG("gcoap: Answering empty CON request with RST\n");
+                } else if (coap_get_type(&pdu) == COAP_TYPE_ACK) {
+                    _find_req_memo(&memo, &pdu, &remote, true);
+                    if (memo != NULL && memo->send_limit != GCOAP_SEND_LIMIT_NON) {
+                        DEBUG("gcoap: empty ACK processed, stopping retransmissions\n");
+                        _cease_retransmission(memo);
+                    } else {
+                        DEBUG("gcoap: empty ACK matches no known CON, ignoring\n");
+                    }
                 } else {
                     DEBUG("gcoap: Ignoring empty non-CON request\n");
                 }
@@ -194,7 +203,7 @@ static void _on_sock_evt(sock_udp_t *sock, sock_async_flags_t type, void *arg)
         case COAP_CLASS_SUCCESS:
         case COAP_CLASS_CLIENT_FAILURE:
         case COAP_CLASS_SERVER_FAILURE:
-            _find_req_memo(&memo, &pdu, &remote);
+            _find_req_memo(&memo, &pdu, &remote, false);
             if (memo) {
                 switch (coap_get_type(&pdu)) {
                 case COAP_TYPE_CON:
@@ -259,6 +268,7 @@ static void _on_resp_timeout(void *arg) {
 #else
         unsigned i        = CONFIG_COAP_MAX_RETRANSMIT - memo->send_limit;
 #endif
+        /* The analogous calculation is done in _cease_retransmission */
         uint32_t timeout  = ((uint32_t)CONFIG_COAP_ACK_TIMEOUT << i) * US_PER_SEC;
 #if CONFIG_COAP_RANDOM_FACTOR_1000 > 1000
         uint32_t end = ((uint32_t)TIMEOUT_RANGE_END << i) * US_PER_SEC;
@@ -273,6 +283,63 @@ static void _on_resp_timeout(void *arg) {
             _expire_request(memo);
         }
     }
+}
+
+/* Stop a memo's retransmission event, sum up the remaining timeouts from all
+ * future retransmissions, and schedule for a final event that indicates
+ * application timeout.
+ *
+ * This is to be called when an empty ACK has arrived.
+ *
+ * It is a no-op if all retransmissions have already been sent, or this
+ * function has already been called (which looks the same in the memo). This
+ * avoids having requests never time out if a malicious server keeps sending
+ * ACKs regularly.
+ *
+ * @param[inout]   memo   The memo indicating the pending request
+ *
+ * @pre The @p memo is active, and its send_limit is not GCOAP_SEND_LIMIT_NON.
+ */
+static void _cease_retransmission(gcoap_request_memo_t *memo) {
+    if (memo->send_limit == 0) {
+        return;
+    }
+    event_timeout_clear(&memo->resp_evt_tmout);
+    // FIXME: if this fails, leave everything as is, acknowledge that we've
+    // alreay set things in motion to send out another CON. (But as this is, we
+    // risk scheduling _on_resp_timeout again).
+    //
+    // If this can't be detected *at all*, there's nothing left anyway but to
+    // set a newflag in the memo and let the retransmission timer code divert
+    // into a different cod path (which may not be so bad after all as it'd be
+    // the single piece of code to calculate timeouts).
+
+    /* Might set a flag to make _on_resp_timeout call _cease_retransmission
+     * again, but those cases are expected to be very rare, and when the next
+     * CON goes out chances are another ACK comes in in time before the next
+     * CON after that goes out. */
+
+    uint32_t timeout = 0;
+
+    while (memo->send_limit) {
+        /* Analogous to _on_resp_timeout. The random factor is statically
+         * chosen to be zero here -- no need to fuzz around when we are not
+         * actually sending and thus competing with other nodes over shared
+         * medium any more. */
+#ifdef CONFIG_GCOAP_NO_RETRANS_BACKOFF
+        unsigned i = 0;
+#else
+        unsigned i = CONFIG_COAP_MAX_RETRANSMIT - memo->send_limit;
+#endif
+        timeout += ((uint32_t)CONFIG_COAP_ACK_TIMEOUT << i) * US_PER_SEC;
+        memo->send_limit -= 1;
+    }
+    /* Not moving data over from the .data field to the .hdr_buf in the union
+     * (which would also mean setting sendd_limit to GCOAP_SEND_LIMIT_NON) as
+     * there is nothing to be gained because the underlying buffer won't be
+     * freed anyway */
+
+    event_timeout_set(&memo->resp_evt_tmout, timeout);
 }
 
 /*
@@ -450,9 +517,10 @@ static int _find_resource(coap_pkt_t *pdu, const coap_resource_t **resource_ptr,
  * memo_ptr[out] -- Registered request memo, or NULL if not found
  * src_pdu[in] -- PDU for token to match
  * remote[in] -- Remote endpoint to match
+ * by_mid[in] -- true if matches are to be done based on Message ID, otherwise they are done by token
  */
 static void _find_req_memo(gcoap_request_memo_t **memo_ptr, coap_pkt_t *src_pdu,
-                           const sock_udp_ep_t *remote)
+                           const sock_udp_ep_t *remote, bool by_mid)
 {
     *memo_ptr = NULL;
     /* no need to initialize struct; we only care about buffer contents below */
@@ -473,7 +541,13 @@ static void _find_req_memo(gcoap_request_memo_t **memo_ptr, coap_pkt_t *src_pdu,
             memo_pdu->hdr = (coap_hdr_t *) memo->msg.data.pdu_buf;
         }
 
-        if (coap_get_token_len(memo_pdu) == cmplen) {
+        if (by_mid) {
+            if (src_pdu->hdr->id == memo_pdu->hdr->id
+                    && sock_udp_ep_equal(&memo->remote_ep, remote)) {
+                *memo_ptr = memo;
+                break;
+            }
+        } else if (coap_get_token_len(memo_pdu) == cmplen) {
             memo_pdu->token = coap_hdr_data_ptr(memo_pdu->hdr);
             if ((memcmp(src_pdu->token, memo_pdu->token, cmplen) == 0)
                     && sock_udp_ep_equal(&memo->remote_ep, remote)) {
