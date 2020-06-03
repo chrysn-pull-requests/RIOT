@@ -436,7 +436,7 @@ static int _gcoap_forward_proxy_via_coap(coap_pkt_t *client_pkt,
         return gcoap_response_emptyack(client_pkt);
     }
     if ((len = forward_to_forwarders(client_pkt, client_ep, &origin_server_ep, _forward_resp_handler)) > 0) {
-        return len;
+        return 0;
     }
 
     unsigned token_len = coap_get_token_len(client_pkt);
