@@ -24,6 +24,8 @@
 typedef struct {
     int in_use;
     sock_udp_ep_t ep;
+    uint16_t message_id;
+    bool sent_ack;
 #if IS_ACTIVE(MODULE_NANOCOAP_CACHE)
     uint8_t cache_key[CONFIG_NANOCOAP_CACHE_KEY_LENGTH];
 #endif
@@ -261,11 +263,42 @@ static void _forward_resp_handler(const gcoap_request_memo_t *memo,
     (void) remote; /* this is the origin server */
     client_ep_t *cep = (client_ep_t *)memo->context;
 
-    /* forward the response packet as-is to the client */
-    gcoap_forward_proxy_dispatch((uint8_t *)pdu->hdr,
-                                 (pdu->payload -
-                                  (uint8_t *)pdu->hdr + pdu->payload_len),
-                                 &cep->ep);
+    /* Fix message ID, token and message type */
+    if (cep->sent_ack) {
+        coap_hdr_set_type(pdu->hdr, COAP_TYPE_CON);
+    } else {
+        coap_hdr_set_type(pdu->hdr, COAP_TYPE_ACK);
+        pdu->hdr->id = cep->message_id;
+    }
+    // Not setting token because that was conveniently chosen in the first
+    // place, and changing it might mean memmoving anyway
+
+    // FIXME check for whether options can be forwarded
+
+    /* Forward the response packet to the client.
+     *
+     * If it is an ACK, this will go rather straight through to sock_udp_send,
+     * otherwise it starts retransmission.
+     */
+
+    /* Yes it's not a request -- but turns out there is nothing in
+     * gcoap_req_send that is actually request specific, especially if we don't
+     * assign a callback. */
+    // FIXME that's not the whole truth yet -- it is true for the function
+    // itself, but the empty-ack handler still leaves the memo around for its
+    // eventual callback, rather than seeing that it's NULL and removing the
+    // memo as it won't ever do anything again. But that's a bug in the
+    // empty-ack handler and not a conceptual thing impeding the use of
+    // gcoap_req_send.
+    //
+    // Also FIXME: We may want to delay this somehow until after the request
+    // memo has been freed, as then we'd need one less memo in the peak case,
+    // and we'd be guaranteed to have a free slot here (provided we did
+    // actually send the request as a CON).
+    gcoap_req_send((uint8_t *)pdu->hdr,
+                   (pdu->payload - (uint8_t *)pdu->hdr + pdu->payload_len),
+                   &cep->ep,
+                   NULL, NULL);
 
 #if IS_ACTIVE(MODULE_NANOCOAP_CACHE)
     coap_pkt_t req;
@@ -383,9 +416,24 @@ static int _gcoap_forward_proxy_via_coap(coap_pkt_t *client_pkt,
         gcoap_forward_proxy_find_req_memo(&memo, client_pkt, &tmp_ep);
     }
     if (memo) {
-        DEBUG("gcoap_forward_proxy: request already exists, ignore!\n");
+        if(memo->resp_handler != _forward_resp_handler) {
+            /* This happens if the assumption that we forward on the same token
+             * does hit a pending request but that request is not actually a
+             * proxy request. It needs to be caught for otherwise the cast of
+             * memo->context to client_ep_t is erroneous. */
+            DEBUG("gcoap_forward_proxy: Received request matches a different own outgoing request, ignoring\n");
+            _free_client_ep(client_ep);
+            return 0;
+        }
+        client_ep_t *original_cep = (client_ep_t *)memo->context;
+        /* If we already sent one, it probably got lost. If not, this is an
+         * impatient client (its retransmission interval is lower than even our
+         * timeout to sen an empty ACK), and we accomodate that by sending an
+         * empty ACK so they stop retransmitting. */
+        original_cep->sent_ack = true;
+        DEBUG("gcoap_forward_proxy: request already exists\n");
         _free_client_ep(client_ep);
-        return 0;
+        return gcoap_response_emptyack(client_pkt);
     }
     if ((len = forward_to_forwarders(client_pkt, client_ep, &origin_server_ep, _forward_resp_handler)) > 0) {
         return len;
@@ -399,9 +447,12 @@ static int _gcoap_forward_proxy_via_coap(coap_pkt_t *client_pkt,
 
     pkt.hdr->ver_t_tkl = client_pkt->hdr->ver_t_tkl;
     pkt.hdr->code = client_pkt->hdr->code;
-    pkt.hdr->id = client_pkt->hdr->id;
+    // should be likein gcoap_req_init (but that whole function is too inflexible):
+//     pkt.hdr->id = (uint16_t)atomic_fetch_add(&_coap_state.next_message_id, 1);
+    pkt.hdr->id = client_pkt->hdr->id + 42;
 
     if (token_len) {
+        // Shouldn't do that (what if different clients use same token?) but convenient for forwarding probably
         memcpy(pkt.token, client_pkt->token, token_len);
     }
 
@@ -415,7 +466,12 @@ static int _gcoap_forward_proxy_via_coap(coap_pkt_t *client_pkt,
     len = gcoap_req_send((uint8_t *)pkt.hdr, len,
                          &origin_server_ep,
                          _forward_resp_handler, (void *)client_ep);
-    return len;
+    if (len < 0)
+        return len;
+
+    /* Nothing further to send; an ACK will only be sent if the response is not
+     * fast */
+    return 0;
 }
 
 int gcoap_forward_proxy_request_process(coap_pkt_t *pkt,
@@ -429,6 +485,9 @@ int gcoap_forward_proxy_request_process(coap_pkt_t *pkt,
     if (!cep) {
         return -ENOMEM;
     }
+
+    cep->message_id = pkt->hdr->id;
+    cep->sent_ack = false;
 
     if (IS_ACTIVE(MODULE_NANOCOAP_CACHE)) {
         int pdu_len = _cache_lookup_and_process(pkt,
@@ -473,14 +532,13 @@ int gcoap_forward_proxy_request_process(coap_pkt_t *pkt,
             _free_client_ep(cep);
             return -EINVAL;
         }
+        return res;
     }
     /* no other scheme supported for now */
     else {
         _free_client_ep(cep);
         return -EPERM;
     }
-
-    return 0;
 }
 
 /** @} */
