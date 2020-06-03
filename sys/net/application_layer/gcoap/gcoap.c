@@ -1194,4 +1194,17 @@ ssize_t gcoap_forward_proxy_dispatch(const uint8_t *buf, size_t len, sock_udp_ep
     return sock_udp_send(&_sock, buf, len, remote);
 }
 
+ssize_t gcoap_response_emptyack(coap_pkt_t *pdu) {
+    if (coap_get_type(pdu) != COAP_TYPE_CON) {
+        return 0;
+    }
+
+    coap_hdr_set_type(pdu->hdr, COAP_TYPE_ACK);
+    coap_hdr_set_code(pdu->hdr, COAP_CODE_EMPTY);
+    /* FIXME make this a coap_hdr_set_token or set_token_length */
+    pdu->hdr->ver_t_tkl &= 0xf0;
+
+    return sizeof(coap_hdr_t);
+}
+
 /** @} */

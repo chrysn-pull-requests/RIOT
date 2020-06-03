@@ -979,6 +979,31 @@ ssize_t gcoap_encode_link(const coap_resource_t *resource, char *buf,
  */
 int gcoap_add_qstring(coap_pkt_t *pdu, const char *key, const char *val);
 
+/**
+ * @brief Prepare an empty ACK response to a request
+ *
+ * This function changes the header fields of an incoming request @p pdu from
+ * CON to ACK, clears token and code to make it suitable for returning in a
+ * request handler.
+ *
+ * If the incoming message is not CON, it does nothing and returns 0. Thus, no
+ * special handling is required on the caller's part if the request comes in as
+ * a NON.
+ *
+ * Its typical use is to `return gcoap_response_emptyack(pdu);` in a request
+ * handler. That is sufficient when a
+ * [No-Response](https://tools.ietf.org/html/rfc7967) option was evaluated and
+ * no response is needed to the rquest.
+ *
+ * Other than in No-Response situations, the caller is responsible for
+ * responding to the original request in a separate response on its own.
+ *
+ * @param[inout] pdu     A freshly received CoAP message that is turned into an empty response
+ *
+ * @return Number of bytes to send as a response
+ */
+ssize_t gcoap_response_emptyack(coap_pkt_t *pdu);
+
 #ifdef __cplusplus
 }
 #endif
