@@ -131,6 +131,41 @@ static void *_event_loop(void *arg)
     return 0;
 }
 
+/* Send an empty response to a PDU that contains a received message.
+ *
+ * This briefly modifies the buffer for sending but then reverts it to its
+ * original content.
+ *
+ * This provides an alternative to sending the ACK after a response handler
+ * callback for cases when the response handler callback needs to modify the
+ * received data in-place and thus makes them unsuitable for sending at the end
+ * of _on_sock_evt.
+ * */
+// FIXME reduce duplication with the regular code path
+static void _send_emptyresponse(sock_udp_t *sock, coap_pkt_t *pdu, sock_udp_ep_t *remote, uint8_t type)
+{
+    struct {
+        uint8_t ver_t_tkl;
+        uint8_t code;
+    } backup;
+    backup.ver_t_tkl = pdu->hdr->ver_t_tkl;
+    backup.code = pdu->hdr->code;
+
+    coap_hdr_set_type(pdu->hdr, type);
+    coap_hdr_set_code(pdu->hdr, COAP_CODE_EMPTY);
+    /* FIXME make this a coap_hdr_set_token or set_token_length */
+    pdu->hdr->ver_t_tkl &= 0xf0;
+
+    ssize_t bytes = sock_udp_send(sock, pdu->hdr,
+                                  sizeof(coap_hdr_t), remote);
+    if (bytes <= 0) {
+        DEBUG("gcoap: empty response failed: %d\n", (int)bytes);
+    }
+
+    pdu->hdr->ver_t_tkl = backup.ver_t_tkl;
+    pdu->hdr->code = backup.code;
+}
+
 /* Handles sock events from the event queue. */
 static void _on_sock_evt(sock_udp_t *sock, sock_async_flags_t type, void *arg)
 {
@@ -210,7 +245,11 @@ static void _on_sock_evt(sock_udp_t *sock, sock_async_flags_t type, void *arg)
             if (memo) {
                 switch (coap_get_type(&pdu)) {
                 case COAP_TYPE_CON:
-                    messagelayer_emptyresponse_type = COAP_TYPE_ACK;
+                    if (false) { // FIXME: Distinguish "handler treats data as immutable" from "handler may modify"
+                        messagelayer_emptyresponse_type = COAP_TYPE_ACK;
+                    } else {
+                        _send_emptyresponse(sock, &pdu, &remote, COAP_TYPE_ACK);
+                    }
                     /* fall through */
                 case COAP_TYPE_NON:
                 case COAP_TYPE_ACK:
