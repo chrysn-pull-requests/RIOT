@@ -24,8 +24,12 @@
 typedef struct {
     int in_use;
     sock_udp_ep_t ep;
+    /* Message ID as copied out from the messages, ie. in network byte order */
     uint16_t message_id;
-    bool sent_ack;
+    /* How to send the forwarded response: as CON, NON or ACK. */
+    uint8_t response_type;
+    /* Timer when to send an empty ACK. May be on the xtimer queue at any time whiel the client_ep_t is in_use. */
+    xtimer_t ack_timer;
 #if IS_ACTIVE(MODULE_NANOCOAP_CACHE)
     uint8_t cache_key[CONFIG_NANOCOAP_CACHE_KEY_LENGTH];
 #endif
@@ -130,6 +134,7 @@ static client_ep_t *_allocate_client_ep(sock_udp_ep_t *ep)
 
 static void _free_client_ep(client_ep_t *cep)
 {
+    xtimer_remove(&cep->ack_timer); /* No harm done in removing a timer that's not active */
     memset(cep, 0, sizeof(*cep));
 }
 
@@ -264,10 +269,12 @@ static void _forward_resp_handler(const gcoap_request_memo_t *memo,
     client_ep_t *cep = (client_ep_t *)memo->context;
 
     /* Fix message ID, token and message type */
-    if (cep->sent_ack) {
-        coap_hdr_set_type(pdu->hdr, COAP_TYPE_CON);
+    xtimer_remove(&cep->ack_timer); /* No harm done in removing a timer that's not active */
+    uint8_t response_type = cep->response_type;
+    coap_hdr_set_type(pdu->hdr, response_type);
+    if (response_type == COAP_TYPE_CON) {
+        // FIXME set the ID from the atomic counter
     } else {
-        coap_hdr_set_type(pdu->hdr, COAP_TYPE_ACK);
         pdu->hdr->id = cep->message_id;
     }
     // Not setting token because that was conveniently chosen in the first
@@ -384,6 +391,25 @@ extern ssize_t forward_to_forwarders(coap_pkt_t *client_pkt,
 
 extern int get_proxy_nexthop(char *dest, char *address);
 
+/* Handler to send an ACK on a client_ep_t if that has not already happened.
+ *
+ * Beware this is executed in an interrupt context. */
+static void _send_ack(void *arg) {
+    coap_hdr_t buf;
+    client_ep_t *cep = arg;
+
+    if (cep->response_type != COAP_TYPE_ACK)
+        return;
+    cep->response_type = COAP_TYPE_CON;
+
+    /* Flipping byte order as unlike in the other places where message_id is
+     * used, coap_build_hdr would actually flip it back */
+    coap_build_hdr(&buf, COAP_TYPE_ACK, NULL, 0, 0, ntohs(cep->message_id));
+    /* As this is neither CON nor has a callback, this is a straight socket
+     * send. Ignoring results just as if the ACK had been lost.  */
+    gcoap_req_send((uint8_t *)&buf, sizeof(buf), &cep->ep, NULL, NULL);
+}
+
 static int _gcoap_forward_proxy_via_coap(coap_pkt_t *client_pkt,
                                          client_ep_t *client_ep,
                                          uri_parser_result_t *urip)
@@ -430,11 +456,23 @@ static int _gcoap_forward_proxy_via_coap(coap_pkt_t *client_pkt,
          * impatient client (its retransmission interval is lower than even our
          * timeout to sen an empty ACK), and we accomodate that by sending an
          * empty ACK so they stop retransmitting. */
-        original_cep->sent_ack = true;
+        xtimer_remove(&original_cep->ack_timer); /* No harm done in removing a timer that's not active */
+        if (original_cep->response_type == COAP_TYPE_ACK)
+            original_cep->response_type = COAP_TYPE_CON;
         DEBUG("gcoap_forward_proxy: request already exists\n");
         _free_client_ep(client_ep);
-        return gcoap_response_emptyack(client_pkt);
+        if (coap_get_type(client_pkt) == COAP_TYPE_CON)
+            return gcoap_response_emptyack(client_pkt);
+        else
+            return 0;
     }
+
+    if (client_ep->response_type == COAP_TYPE_ACK) {
+        client_ep->ack_timer.callback = _send_ack;
+        client_ep->ack_timer.arg = client_ep;
+        xtimer_set(&client_ep->ack_timer, CONFIG_GCOAP_PROXY_EMPTYACKTIME);
+    }
+
     if ((len = forward_to_forwarders(client_pkt, client_ep, &origin_server_ep, _forward_resp_handler)) > 0) {
         return 0;
     }
@@ -487,7 +525,7 @@ int gcoap_forward_proxy_request_process(coap_pkt_t *pkt,
     }
 
     cep->message_id = pkt->hdr->id;
-    cep->sent_ack = false;
+    cep->response_type = coap_get_type(pkt) == COAP_TYPE_CON ? COAP_TYPE_ACK : COAP_TYPE_NON;
 
     if (IS_ACTIVE(MODULE_NANOCOAP_CACHE)) {
         int pdu_len = _cache_lookup_and_process(pkt,

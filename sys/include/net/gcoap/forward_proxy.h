@@ -69,6 +69,16 @@ void gcoap_forward_proxy_find_req_memo(gcoap_request_memo_t **memo_ptr,
                                        coap_pkt_t *src_pdu,
                                        const sock_udp_ep_t *remote);
 
+/**
+ * @ingroup net_gcoap_conf
+ * @brief   Time to wait for a proxy response before sending an empty ACK [in usec]
+ *
+ * Set to 0 to disable timeout.
+ */
+#ifndef CONFIG_GCOAP_PROXY_EMPTYACKTIME
+#define CONFIG_GCOAP_PROXY_EMPTYACKTIME       (1 * US_PER_SEC)
+#endif
+
 #ifdef __cplusplus
 }
 #endif
