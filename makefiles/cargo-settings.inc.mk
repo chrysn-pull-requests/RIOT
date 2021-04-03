@@ -2,7 +2,10 @@
 #
 # This does not have a sane default, and needs to be set in the architecture
 # files.
-# CARGO_TARGET = ...
+#
+# It is set by the architecture (and thus eventually the CPU), and exported to
+# be available when building Rust modules.
+export CARGO_TARGET
 
 # Flags that need to be added to the RIOT_CFLAGS passed to cargo in order to
 # make bindgen happy
@@ -17,5 +20,5 @@ CARGO_PROFILE ?= debug
 # here is to pick a particular nightly when something breaks.
 CARGO_CHANNEL ?= nightly
 
-# The single Rust library to be built.
+# The single Rust library to be built for the application
 CARGO_LIB = target/$(CARGO_TARGET)/${CARGO_PROFILE}/lib$(APPLICATION_RUST_MODULE).a
