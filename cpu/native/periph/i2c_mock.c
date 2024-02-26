@@ -26,6 +26,8 @@
  * @author      Gilles DOFFE <g.doffe@gmail.com>
  */
 
+#include <string.h>
+
 #include "periph/i2c.h"
 
 __attribute__((weak)) void i2c_init(i2c_t dev)
