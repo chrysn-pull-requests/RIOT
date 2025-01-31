@@ -2,6 +2,8 @@ include ../Makefile.net_common
 
 USEMODULE += auto_init_gnrc_netif
 USEMODULE += gcoap_forward_proxy
+USEMODULE += gcoap_forward_proxy_thread
+USEMODULE += nanocoap_cache
 USEMODULE += gnrc_ipv6_default
 USEMODULE += netdev_default
 USEMODULE += shell
