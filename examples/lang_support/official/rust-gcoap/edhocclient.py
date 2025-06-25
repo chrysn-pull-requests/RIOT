@@ -126,8 +126,10 @@ class EdhocClient:
             self.cipher_suite,
             g_x,
             c_i,
-            {}  # EAD_1 (empty for now)
-        ])
+            #{}  # EAD_1 (empty for now)
+        ])[1:] # quick and dirty array-to-cbor-stream
+
+        message1_cbor = cbor2.dumps(True) + message1_cbor
         
         # Store transcript
         self.session_transcript.append(message1_cbor)
