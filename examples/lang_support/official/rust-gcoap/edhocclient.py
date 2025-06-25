@@ -30,9 +30,8 @@ class EdhocClient:
         self.context = None
         
         # EDHOC parameters
-        self.method = 0  # Signature key, signature key
-        self.corr = 0    # No correlation
-        self.cipher_suite = 0  # AES-CCM-16-64-128, SHA-256, 8, X25519, Ed25519, AES-CCM-16-64-128, SHA-256
+        self.method = 3  # static-static
+        self.cipher_suite = 2  # AES-CCM-16-64-128, SHA-256, 8, X25519, Ed25519, AES-CCM-16-64-128, SHA-256
         
         # Client credentials (these would normally be provisioned)
         self.client_private_key = None
@@ -120,7 +119,7 @@ class EdhocClient:
         g_x = eph_numbers.x.to_bytes(32, 'big') + eph_numbers.y.to_bytes(32, 'big')
         
         # Message 1 structure: (METHOD, SUITES_I, G_X, C_I, EAD_1)
-        c_i = secrets.token_bytes(4)  # Connection identifier
+        c_i = secrets.token_bytes(2)  # Connection identifier
         
         message1_cbor = cbor2.dumps([
             self.method,
