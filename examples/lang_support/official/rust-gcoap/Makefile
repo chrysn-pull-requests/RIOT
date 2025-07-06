@@ -44,6 +44,8 @@ USEMODULE += saul_default
 # add this line:
 CFLAGS += -DNDEBUG
 
+# We'd crash on message 3 anyway, let's not crash that hard yet
+#CFLAGS += -DCONFIG_GCOAP_PDU_BUF_SIZE=1100
 
 # Change this to 0 show compiler invocation lines by default:
 QUIET ?= 1
