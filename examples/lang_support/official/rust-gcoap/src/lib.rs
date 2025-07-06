@@ -333,7 +333,8 @@ impl seccfg::ServerSecurityConfig for EdhocSecurityConfig {
     fn own_edhoc_credential(&self) -> Option<(Credential, lakers::BytesP256ElemLen)> {
         println!("[DEBUG] own_edhoc_credential called");
         if let Some((cred, key)) = &self.own_edhoc_credential {
-            println!("[DEBUG] Returning credential: {:?}", cred);
+            println!("[DEBUG] Returning credential: {:02x?}", cred.bytes.as_slice());
+            println!("^^ Copy-paste this into cbor.me, it'll give you something to put into your client.diag file");
             println!("[DEBUG] Private key length: {}", key.len());
             // Check if credential is valid
             match cred.by_value() {
