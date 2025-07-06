@@ -486,8 +486,9 @@ fn generate_credpair_with_fixed_key() -> (Credential, lakers::BytesP256ElemLen) 
         0x08, // Key: 8 (cnf)
         0xA1, // Value: Map with 1 pair  
         0x01, // Key: 1 (COSE_Key)
-        0xA4, // Value: Map with 4 pairs
+        0xA5, // Value: Map with 5 pairs
         0x01, 0x02, // kty: 2 (EC2)
+        0x02, 0x41, 0xff, // kid: bytes h'ff'
         0x20, 0x01, // crv: 1 (P-256)  
         0x21, 0x58, 0x20, // x: bytes(32)
     ]).unwrap();
