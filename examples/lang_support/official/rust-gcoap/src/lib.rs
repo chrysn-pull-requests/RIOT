@@ -32,7 +32,7 @@ impl log::Log for RiotLogger {
 
     fn log(&self, record: &log::Record) {
         if self.enabled(record.metadata()) {
-            println!("[{}] {}", record.level(), record.args());
+            println!("[{} {}] {}", record.level(), record.module_path().unwrap_or("unknown module"), record.args());
         }
     }
 
