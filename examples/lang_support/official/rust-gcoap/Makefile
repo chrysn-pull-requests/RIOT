@@ -50,7 +50,7 @@ QUIET ?= 1
 
 # Add 12k extra stack: The Rust examples take more of it than gcoap expects,
 # for reasons that are not fully understood (it's not the string formatter).
-CFLAGS += -DGCOAP_STACK_SIZE='(THREAD_STACKSIZE_DEFAULT+DEBUG_EXTRA_STACKSIZE+sizeof(coap_pkt_t)+12288)'
+CFLAGS += -DGCOAP_STACK_SIZE='(THREAD_STACKSIZE_DEFAULT+DEBUG_EXTRA_STACKSIZE+sizeof(coap_pkt_t)+32768)'
 # This thread needs some more stack for printing the addresses, once more being
 # hit by string formatting.
 # in your Application Makefile, replace your THREAD_STACKSIZE_MAIN override with something like:
