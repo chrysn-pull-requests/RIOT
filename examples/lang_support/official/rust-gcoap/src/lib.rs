@@ -540,7 +540,7 @@ fn main() {
 
     println!("[DEBUG] Starting EDHOC server...");
     log::set_logger(&LOGGER).unwrap();
-    log::set_max_level(log::LevelFilter::Debug);
+    log::set_max_level(log::LevelFilter::Trace);
     info!("EDHOC server logger initialized");
 
     static PINGS: riot_coap_handler_demos::ping::PingPool =
@@ -634,6 +634,7 @@ fn main() {
         println!("[DEBUG] === EDHOC Server Ready ===");
         println!("[DEBUG] EDHOC endpoint: /.well-known/edhoc");
         println!("[DEBUG] All requests will be logged");
+        log::trace!("Down to trace level");
         println!("[DEBUG] Waiting for interfaces...");
 
         let sectimer = ztimer::Clock::sec();
